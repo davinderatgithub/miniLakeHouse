@@ -13,3 +13,10 @@ This system allows users to execute ORDER BY clauses directly on distributed dat
 4. **Efficiency**: By processing data where it resides, our system minimizes data movement across the network, resulting in faster processing times and reduced bandwidth usage.
 
 5. **Flexible Data File Support**: The system is capable of working with various data file formats, providing users with the versatility to process diverse datasets without the need for format conversion.
+
+
+Build
+
+g++ -std=c++17 Driver.cpp -o driver
+
+g++ -std=c++17 Engine.cpp -o engine
