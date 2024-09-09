@@ -32,3 +32,25 @@ second phase
 Thrid phase
 1. utilize parallel processing
     - use k-way merge to merge chunks from different engines
+
+    Modify the Driver:
+
+    a. Accept multiple engine port numbers as command-line arguments.
+    b. Implement a connection manager to handle multiple engine connections.
+    c. Develop a task distribution strategy to divide work among engines.
+    d. Implement a result aggregation mechanism to combine results from all engines.
+
+    Update the Engine:
+
+    a. Ensure the engine can handle partial datasets.
+    b. Implement efficient local sorting and processing.
+
+    Implement Parallelization Strategy:
+
+    a. File-based partitioning: Assign different files to different engines.
+    b. Data-based partitioning: Split large files and distribute chunks to engines.
+
+    Update Shell Scripts:
+
+    a. Modify start_engine.sh to launch multiple engine instances.
+    b. Update start_driver.sh to pass multiple engine port numbers.

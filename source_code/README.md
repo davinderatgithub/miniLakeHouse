@@ -15,8 +15,31 @@ This system allows users to execute ORDER BY clauses directly on distributed dat
 5. **Flexible Data File Support**: The system is capable of working with various data file formats, providing users with the versatility to process diverse datasets without the need for format conversion.
 
 
-Build
+# Build
 
-g++ -std=c++17 Driver.cpp -o driver
+We are using nlohmann's JSON library for C++, it makes JSON serialization and deserialization easier. Compile the code with C++17 standard
 
-g++ -std=c++17 Engine.cpp -o engine
+brew install nlohmann-json
+
+g++ -std=c++17 driver_main.cpp -o driver_main
+g++ -std=c++17 engine_main.cpp -o engine_main
+
+
+# Usage
+
+1. Start engine instances like as follows using different ports
+./start_engine.sh 9001 9002 9003
+
+2. Start driver to process the task.
+./start_driver.sh 9001 9002 9003
+
+
+# Working
+
+1. On Driver we distribute the tasks using file-based partitioning i.e. Assign different files to different engines. 
+
+2. On Engine, we recive the file name as message and load the file and then sort it.
+After sorting it returns the data as json objects. 
+
+We are using TCP/IP socket based communication.
+

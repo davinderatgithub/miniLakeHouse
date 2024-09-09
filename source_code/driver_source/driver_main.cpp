@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <thread>
 #include <sys/socket.h>  // For AF_INET, socket(), connect()
 #include <arpa/inet.h>   // For inet_addr()
 #include <unistd.h>      // For close()
@@ -15,9 +16,14 @@ using json = nlohmann::json;
 class Driver {
 private:
     vector<int> engine_sockets;
+    vector<string> results_g;
+    mutex resultsMutex;
+    vector<json> results_json;
+    vector<StudentRecord> results_data; 
+    vector<int> engine_ports;
 
 public:
-    Driver(const vector<int>& engine_ports) {
+    Driver(const vector<int>& engine_ports) : engine_ports(engine_ports) {
         connect_to_engines(engine_ports);
     }
 
@@ -55,16 +61,119 @@ public:
         send(sock, task_str.c_str(), task_str.length(), 0);
     }
 
-    // json reveive_result(int sock) {
-    //     char buffer[4096] = {0};
-    //     int valread = read(sock, buffer, 4096);
-    //     cout << "read bytes: " << valread << endl;
+    vector <string> get_csv_files(const string& data_directory) {
+        // Check if the directory exists
+        if (!filesystem::exists(data_directory)) {
+            throw runtime_error("Directory does not exist: " + data_directory);
+        }
 
-    //     return json::parse(buffer);
-    // }
+        // Check if it's actually a directory
+        if (!filesystem::is_directory(data_directory)) {
+            throw runtime_error("Path is not a directory: " + data_directory);
+        }
+        vector <string> csv_files;
+        for (const auto& entry : filesystem::directory_iterator(data_directory)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".csv") {
+                csv_files.push_back(entry.path().string());
+            }
+        }
+        return csv_files;
+    }
 
-    vector<json> reveive_results(int sock) {
-        vector<json> results;
+    // Deserialize json to record
+    vector<StudentRecord> json_to_student_records(json json_data) {
+        vector<StudentRecord> records;
+
+        try {
+            if (json_data.contains("data") && json_data["data"].is_array()) {
+                for (const auto& item : json_data["data"]) {
+                    StudentRecord record;
+                    record.student_id = item["student_id"];
+                    record.batch_year = item["batch_year"];
+                    record.university_ranking = item["university_ranking"];
+                    record.batch_ranking = item["batch_ranking"];
+                    records.push_back(record);
+                }
+            }
+
+            // You can also check other fields if needed
+            if (json_data.contains("status")) {
+                cout << "Status: " << json_data["status"] << endl;
+            }
+
+        } catch (json::parse_error& e) {
+            cerr << "JSON parsing error: " << e.what() << endl;
+        } catch (json::type_error& e) {
+            cerr << "JSON type error: " << e.what() << endl;
+        }
+
+        return records;
+    }
+
+    void process_data(const string& data_directory,
+                      const string& output_file) {
+        cout << "Process data." << endl;
+        // Divide tasks and send to engine
+
+        // collect all the .csv file names from the data_dir
+        vector<string> files_to_read = get_csv_files(data_directory);
+
+        cout << "files count: " << files_to_read.size() << endl;
+    
+        // send files to the engine
+        int engine_count = engine_sockets.size();
+        int files_per_thread = ceil(files_to_read.size() / engine_count);
+        int i = 0;
+
+        for (int sock : engine_sockets) {
+
+            // File-based partitioning: Assign different files to different engines.
+            int file_count = 0;
+            vector<string> files_list_per_thread;
+            while (file_count < files_per_thread && i < files_to_read.size()) {
+                files_list_per_thread.push_back(files_to_read[i++]);
+                ++file_count;
+            }
+
+            json task = {
+                {"action", "process_files"},
+                {"files", files_list_per_thread}
+            };
+
+            cout << "Attempting to send tasks ..." << endl;
+            send_task(sock, task);
+            cout << "Tasks sent to socket: " << sock << endl;
+        }
+
+        // Receive and process results
+        // Revieve results from all the engine instances
+        receive_results();
+        cout << "received messages: " << results_json.size() << endl;
+        // Deserialize the data for aggregation
+        for (const auto& result : results_json) {
+            if (result["status"] == "task_completed") {
+                cout << "Received result: " << result["status"].dump() << endl;
+                auto data = json_to_student_records(result);
+                cout << "student records: " << data.size() << endl;
+                results_data.insert(results_data.end(), data.begin(), data.end());
+            }
+        }
+
+        //sort(results.begin(), results.end());
+        write_output(results_data, output_file);
+    }
+
+    void receive_results() {
+        vector<thread> threads;
+        for (int sock : engine_sockets) {
+            threads.emplace_back(&Driver::reveive_results_from_engine, this, sock);
+        }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    }
+
+    void reveive_results_from_engine(int sock) {
         string buffer;
         char temp_buffer[1024];
         int bytes_received;
@@ -99,10 +208,11 @@ public:
                     cout << "Json parsing..." << endl;
                     json result = json::parse(json_str);
                     cout << "Json parsing Done!" << endl;
-                    results.push_back(result);
+                    lock_guard<mutex> lock(resultsMutex);
+                    results_json.push_back(result);
 
                     if (result["status"] == "task_completed") {
-                        return results;
+                        return;
                     }
                 } catch (const json::exception& e) {
                     cerr << "JSON parsing error: " << e.what() << endl;
@@ -114,130 +224,6 @@ public:
         throw runtime_error("Connection closed unexpectedly");
     }
 
-    vector <string> get_csv_files(const string& data_directory) {
-
-        // Check if the directory exists
-        if (!filesystem::exists(data_directory)) {
-            throw runtime_error("Directory does not exist: " + data_directory);
-        }
-
-        // Check if it's actually a directory
-        if (!filesystem::is_directory(data_directory)) {
-            throw runtime_error("Path is not a directory: " + data_directory);
-        }
-        vector <string> csv_files;
-        for (const auto& entry : filesystem::directory_iterator(data_directory)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".csv") {
-                csv_files.push_back(entry.path().string());
-            }
-        }
-        return csv_files;
-    }
-
-    vector<StudentRecord> json_to_student_records(json json_data) {
-        vector<StudentRecord> records;
-
-        try {
-            if (json_data.contains("data") && json_data["data"].is_array()) {
-                for (const auto& item : json_data["data"]) {
-                    StudentRecord record;
-                    record.student_id = item["student_id"];
-                    record.batch_year = item["batch_year"];
-                    record.university_ranking = item["university_ranking"];
-                    record.batch_ranking = item["batch_ranking"];
-                    records.push_back(record);
-                }
-            }
-
-            // You can also check other fields if needed
-            if (json_data.contains("status")) {
-                cout << "Status: " << json_data["status"] << endl;
-            }
-            // if (json_data.contains("chunks") && json_data.contains("total_chunks")) {
-            //     cout << "Received chunk " << j["chunks"] << " of " << j["total_chunks"] << endl;
-            // }
-
-        } catch (json::parse_error& e) {
-            cerr << "JSON parsing error: " << e.what() << endl;
-        } catch (json::type_error& e) {
-            cerr << "JSON type error: " << e.what() << endl;
-        }
-
-        return records;
-    }
-
-    void process_data(const string& data_directory,
-                      const string& output_file) {
-        
-        cout << "Process data." << endl;
-        // Divide tasks and send to engine
-
-        // collect all the .csv file names from the data_dir
-        vector<string> files_to_read = get_csv_files(data_directory);
-
-        cout << "files count: " << files_to_read.size() << endl;
-    
-        // send files to the engine
-        int engine_count = engine_sockets.size();
-        int file_counter_inc = ceil(files_to_read.size() / engine_count);
-        int i = 0;
-
-
-        for (int sock : engine_sockets) {
-
-            // file range
-
-            // files_to_read.begin() + i * file_counter_inc, min (files_to_read.begin() + (i + 1) * file_counter_inc,
-            //                                                    files_to_read.size()) 
-            //vector<string>::iterator range_end = (files_to_read.begin() + (i + 1) * file_counter_inc > files_to_read.size()) ? ;
-             json task = {
-                 {"action", "process_files"},
-                 {"files", files_to_read}
-             };
-            // json task = {
-            //     {"action", "process_files"},
-            //     {"files", (files_to_read.begin() + i * file_counter_inc,
-            //                min(files_to_read.begin() + (i + 1) * file_counter_inc,
-            //                    files_to_read.size()) )} // TODO
-           // };
-
-            cout << "Attempting to send tasks ..." << endl;
-            send_task(sock, task);
-            cout << "Tasks sent!" << endl;
-        }
-
-        // Receive and process results
-        vector<StudentRecord> results_data;
-        for (int sock : engine_sockets) {
-            bool task_completed = false;
-            while (!task_completed)
-            {
-                cout << "Waiting to receive results" << endl;
-                vector<json> results = reveive_results(sock);
-                cout << "received messages: " << results.size() << endl;
-
-                for (const auto& result : results) {
-                    if (result["status"] == "task_completed") {
-                        cout << "Received result: " << result["status"].dump() << endl;
-                   
-                        //auto data = result["data"].get<vector<string>>();
-                        auto data = json_to_student_records(result);
-                        results_data.insert(results_data.end(), data.begin(), data.end());
-                        task_completed = true;
-                        break;
-                    } else if (result["status"] == "EOT") {
-                        cout << "All results received" << endl;
-                    } else if (result["status"] == "error") {
-                        cerr << "Error: " << result["message"] << endl;
-                    }
-                }
-            }
-        }
-
-        //Final processing and the output genration
-        //sort(results.begin(), results.end());
-        write_output(results_data, output_file);
-    }
     void write_output(vector<StudentRecord>& sorted_results, const string& output_file) {
         ofstream out(output_file);
         for (auto record : sorted_results) {
@@ -252,10 +238,16 @@ public:
     }
 };
 
-int main() {
+
+int main(int argc, char* argv[]) {
+    vector<int> engine_ports;
     string data_directory = "/Users/davindersingh/mywork/miniLakeHouse/source_code/sample_dataset";
     string output_file = "output.txt";
-    vector<int> engine_ports = {9001};  //{9001, 9002, 9003};
+
+    for (int i = 1; i < argc; ++i) {
+        engine_ports.push_back(std::stoi(argv[i]));
+    }
+
     Driver driver(engine_ports);
     driver.process_data(data_directory, output_file);
     return 0;
