@@ -8,6 +8,8 @@
 #include <fstream>
 #include <netinet/in.h>  // For struct sockaddr_in
 #include <nlohmann/json.hpp>
+#include <queue>
+#include <algorithm>
 #include "../include/student_record.h"
 
 using namespace std;
@@ -59,6 +61,67 @@ public:
     void send_task(int sock, const json&task) {
         string task_str = task.dump();
         send(sock, task_str.c_str(), task_str.length(), 0);
+    }
+
+    void receive_results() {
+        vector<thread> threads;
+        for (int sock : engine_sockets) {
+            threads.emplace_back(&Driver::reveive_results_from_engine, this, sock);
+        }
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    }
+
+    void reveive_results_from_engine(int sock) {
+        string buffer;
+        char temp_buffer[1024];
+        int bytes_received;
+
+        while (true) {
+            bytes_received = recv(sock, temp_buffer, sizeof(temp_buffer) - 1, 0);
+            cout << "bytes_received: " << bytes_received << endl;
+            if (bytes_received <= 0) {
+                break;
+            }
+
+            temp_buffer[bytes_received] = '\0';
+            buffer += temp_buffer;
+
+            while (!buffer.empty()) {
+                // Find the position of the first complete JSON object
+                size_t object_end = buffer.find_first_of('\n');
+                if (object_end == string::npos) {
+                    // No complete object found, wait for more data
+                    break;
+                }
+                object_end++; // Include the closing brace
+
+                // Extract the JSON string
+                string json_str = buffer.substr(0, object_end);
+                buffer.erase(0, object_end);
+
+                // Remove any leading whitespace or newlines
+                json_str.erase(0, json_str.find_first_not_of(" \n\r\t"));
+
+                try {
+                    cout << "Json parsing..." << endl;
+                    json result = json::parse(json_str);
+                    cout << "Json parsing Done!" << endl;
+                    lock_guard<mutex> lock(resultsMutex);
+                    results_json.push_back(result);
+
+                    if (result["status"] == "task_completed") {
+                        return;
+                    }
+                } catch (const json::exception& e) {
+                    cerr << "JSON parsing error: " << e.what() << endl;
+                    cerr << "Problematic JSON string: " << json_str << endl;
+                }
+            }
+        }
+        cout << "reached at exception unexpectedly " << endl;
+        throw runtime_error("Connection closed unexpectedly");
     }
 
     vector <string> get_csv_files(const string& data_directory) {
@@ -150,78 +213,58 @@ public:
         receive_results();
         cout << "received messages: " << results_json.size() << endl;
         // Deserialize the data for aggregation
+        vector<vector<StudentRecord>> result_agg;
         for (const auto& result : results_json) {
             if (result["status"] == "task_completed") {
                 cout << "Received result: " << result["status"].dump() << endl;
                 auto data = json_to_student_records(result);
                 cout << "student records: " << data.size() << endl;
-                results_data.insert(results_data.end(), data.begin(), data.end());
+                //results_data.insert(results_data.end(), data.begin(), data.end());
+                result_agg.push_back(data);
             }
         }
 
         //sort(results.begin(), results.end());
+        mergeNSortedVectors(result_agg);
         write_output(results_data, output_file);
     }
-
-    void receive_results() {
-        vector<thread> threads;
-        for (int sock : engine_sockets) {
-            threads.emplace_back(&Driver::reveive_results_from_engine, this, sock);
+    struct CompareVector {
+        bool operator()(const std::pair<StudentRecord, std::pair<int, int>>& a, 
+                        const std::pair<StudentRecord, std::pair<int, int>>& b) {
+            if (a.first.batch_year != b.first.batch_year)
+                return a.first.batch_year < b.first.batch_year;
+            if (a.first.university_ranking != b.first.university_ranking)
+                return a.first.university_ranking < b.first.university_ranking;
+            
+            return a.first.batch_ranking < b.first.batch_ranking;
         }
-        for (auto& thread : threads) {
-            thread.join();
+    };
+
+    // <StudentRecord, <vector_number, element_number>>
+    void mergeNSortedVectors(vector<vector<StudentRecord>>& result_agg) {
+        priority_queue<pair<StudentRecord, pair<int, int>>,
+                       vector<pair<StudentRecord, pair<int, int>>>,
+                       CompareVector> pq;
+
+        // add first element of each vector
+        for (int i = 0; i < result_agg.size(); ++i) {
+            pq.push({result_agg[0][0], {i, 0}});
         }
-    }
 
-    void reveive_results_from_engine(int sock) {
-        string buffer;
-        char temp_buffer[1024];
-        int bytes_received;
+        while (!pq.empty()) {
+            auto& element = pq.top();
 
-        while (true) {
-            bytes_received = recv(sock, temp_buffer, sizeof(temp_buffer) - 1, 0);
-            cout << "bytes_received: " << bytes_received << endl;
-            if (bytes_received <= 0) {
-                break;
-            }
+            results_data.push_back(element.first);
+            int vector_index = element.second.first;
+            int element_index = element.second.second;
+            pq.pop();
 
-            temp_buffer[bytes_received] = '\0';
-            buffer += temp_buffer;
-
-            while (!buffer.empty()) {
-                // Find the position of the first complete JSON object
-                size_t object_end = buffer.find_first_of('\n');
-                if (object_end == string::npos) {
-                    // No complete object found, wait for more data
-                    break;
-                }
-                object_end++; // Include the closing brace
-
-                // Extract the JSON string
-                string json_str = buffer.substr(0, object_end);
-                buffer.erase(0, object_end);
-
-                // Remove any leading whitespace or newlines
-                json_str.erase(0, json_str.find_first_not_of(" \n\r\t"));
-
-                try {
-                    cout << "Json parsing..." << endl;
-                    json result = json::parse(json_str);
-                    cout << "Json parsing Done!" << endl;
-                    lock_guard<mutex> lock(resultsMutex);
-                    results_json.push_back(result);
-
-                    if (result["status"] == "task_completed") {
-                        return;
-                    }
-                } catch (const json::exception& e) {
-                    cerr << "JSON parsing error: " << e.what() << endl;
-                    cerr << "Problematic JSON string: " << json_str << endl;
-                }
+            // if another element exists in same vector push it into queue
+            if (element_index + 1 < result_agg[vector_index].size()) {
+                pq.push({result_agg[vector_index][element_index + 1],
+                         {vector_index, element_index + 1}});
             }
         }
-        cout << "reached at exception unexpectedly " << endl;
-        throw runtime_error("Connection closed unexpectedly");
     }
 
     void write_output(vector<StudentRecord>& sorted_results, const string& output_file) {

@@ -1,6 +1,6 @@
 #!/bin/bash
 for port in "$@"
 do
-    ./engine_main $port &
+    ./build/engine_main $port &
 done
 wait

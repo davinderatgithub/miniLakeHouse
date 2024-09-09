@@ -103,20 +103,6 @@ public:
             else
                 cout << "sent data bytes: " << bytes_sent << endl;
 
-            // end of transmission
-            // result = {
-            //     {"status", "task_completed"}
-            // };
-            // result_str = result.dump();
-            // bytes_sent = send(new_socket,
-            //                           result_str.c_str(),
-            //                           result_str.length(), 0);
-            // if (bytes_sent < 0) {
-            //     cerr << "Error sending data " << strerror(errno) << endl;
-            // }
-            // else
-            //     cout << "sent data bytes: " << bytes_sent << endl;
-
             close(new_socket);
         } 
     }
@@ -199,16 +185,6 @@ public:
             sort_data();
             //processed_data.insert(processed_data.end(), data.begin(), data.end());
         }
-
-        // read file
-        // sort 
-
-        // json result = {
-        //     {"status", "task_completed"},
-        //     {"data", data},
-        //     {"chunks", 1}, 
-        //     {"total_chunks", 1}
-        // };
 
         json result = create_result_json();
 

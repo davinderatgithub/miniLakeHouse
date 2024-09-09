@@ -1,2 +1,2 @@
 #!/bin/bash
-./driver_main "$@"
+./build/driver_main "$@"
