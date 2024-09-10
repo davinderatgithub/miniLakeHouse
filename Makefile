@@ -3,9 +3,9 @@ CXXFLAGS = -std=c++17 -Wall -Wextra -pedantic
 LDFLAGS = 
 
 # Directories
-DRIVER_SRC_DIR = driver_source
-ENGINE_SRC_DIR = engine_source
-INCLUDE_DIR = include
+DRIVER_SRC_DIR = source_code/driver_source
+ENGINE_SRC_DIR = source_code/engine_source
+INCLUDE_DIR = source_code/include
 BUILD_DIR = build
 
 # Source files

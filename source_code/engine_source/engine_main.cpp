@@ -92,7 +92,7 @@ public:
             // Add newline as a message separator
             string result_str = result.dump() + "\n";
 
-            cout << result_str << endl;
+            //cout << result_str << endl;
             ssize_t bytes_sent = send(new_socket,
                                       result_str.c_str(),
                                       result_str.length(), 0);
@@ -112,7 +112,7 @@ public:
         //vector<StudentRecord> data;
 
         if (!file.is_open()) {
-            throw std::runtime_error("Failed to open file: " + file_path);
+            throw runtime_error("Failed to open file: " + file_path);
         }
 
         string line;
@@ -142,6 +142,40 @@ public:
                 
                 return a.batch_ranking < b.batch_ranking;
             });
+    }
+
+    void quick_sort(int low, int high) {
+        if (low < high) {
+            // Partition the array
+            int pivot = partition(low, high);
+
+            // Recursively sort the sub-arrays
+            quick_sort(low, pivot - 1);
+            quick_sort(pivot + 1, high);
+        }
+    }
+
+    int partition(int low, int high) {
+        StudentRecord pivot = data[high];
+        int i = low - 1;
+
+        for (int j = low; j < high; j++) {
+            if (compare_student_records(data[j], pivot)) {
+                i++;
+                swap(data[i], data[j]);
+            }
+        }
+        swap(data[i + 1], data[high]);
+        return i + 1;
+    }
+
+    bool compare_student_records(const StudentRecord& a, const StudentRecord& b) {
+        if (a.batch_year != b.batch_year)
+            return a.batch_year < b.batch_year;
+        if (a.university_ranking != b.university_ranking)
+            return a.university_ranking < b.university_ranking;
+
+        return a.batch_ranking < b.batch_ranking;
     }
 
     // Function to convert StudentRecord to json
@@ -182,7 +216,8 @@ public:
         for (string file : files_to_read) {
             cout << file << endl;
             read_data(file);
-            sort_data();
+            //sort_data();
+            quick_sort(0, data.size() - 1);
             //processed_data.insert(processed_data.end(), data.begin(), data.end());
         }
 

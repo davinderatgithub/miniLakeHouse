@@ -185,8 +185,10 @@ public:
     
         // send files to the engine
         int engine_count = engine_sockets.size();
-        int files_per_thread = ceil(files_to_read.size() / engine_count);
+        int files_per_thread = (int)ceil((double)files_to_read.size() / engine_count);
         int i = 0;
+
+        cout << "files per thread : " << files_per_thread << endl;
 
         for (int sock : engine_sockets) {
 
@@ -197,6 +199,12 @@ public:
                 files_list_per_thread.push_back(files_to_read[i++]);
                 ++file_count;
             }
+
+            cout << "engine_socket: " << sock << endl;
+            for (auto file_name : files_list_per_thread)
+                cout << file_name << endl;
+
+            cout << endl;
 
             json task = {
                 {"action", "process_files"},
@@ -225,7 +233,7 @@ public:
         }
 
         //sort(results.begin(), results.end());
-        mergeNSortedVectors(result_agg);
+        merge_N_sorted_vectors(result_agg);
         write_output(results_data, output_file);
     }
     struct CompareVector {
@@ -241,7 +249,7 @@ public:
     };
 
     // <StudentRecord, <vector_number, element_number>>
-    void mergeNSortedVectors(vector<vector<StudentRecord>>& result_agg) {
+    void merge_N_sorted_vectors(vector<vector<StudentRecord>>& result_agg) {
         priority_queue<pair<StudentRecord, pair<int, int>>,
                        vector<pair<StudentRecord, pair<int, int>>>,
                        CompareVector> pq;
@@ -271,6 +279,7 @@ public:
         ofstream out(output_file);
         for (auto record : sorted_results) {
             //cout << record.student_id << endl;
+            //out << record.student_id << " " << record.batch_year << " " << record.batch_ranking << " "  << record.university_ranking << endl;
             out << record.student_id << endl;
         }
     }
@@ -284,11 +293,11 @@ public:
 
 int main(int argc, char* argv[]) {
     vector<int> engine_ports;
-    string data_directory = "/Users/davindersingh/mywork/miniLakeHouse/source_code/sample_dataset";
+    string data_directory = "./sample_dataset";
     string output_file = "output.txt";
 
     for (int i = 1; i < argc; ++i) {
-        engine_ports.push_back(std::stoi(argv[i]));
+        engine_ports.push_back(stoi(argv[i]));
     }
 
     Driver driver(engine_ports);

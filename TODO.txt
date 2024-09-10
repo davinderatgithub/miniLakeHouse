@@ -1,4 +1,4 @@
-Project Overview:
+Project Progess Overview: (Completed)
 
 Implement a distributed query processing engine
 Process structured data (student rankings table)
