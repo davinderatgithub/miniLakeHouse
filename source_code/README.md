@@ -18,7 +18,7 @@ This system allows users to execute ORDER BY clauses directly on distributed dat
 
 # Project directory structure
 ```
-davinder_singh % tree
+miniLakeHouse % tree
 .
 ├── Makefile
 ├── README.md
@@ -43,7 +43,7 @@ brew install nlohmann-json
 # Build
 Run make, it creates build directory and install build files.
 ```bash
-cd davinder_singh
+cd miniLakeHouse
 make
 ```
 
