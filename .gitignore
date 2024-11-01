@@ -4,7 +4,7 @@
 *.csv
 
 # But do not ignore sample_data.csv in the sample_dataset directory
-!source_code/sample_dataset/sample_data.csv
+!sample_dataset/sample_data.csv
 # Optionally, you might want to ignore other common files:
 # macOS system files
 .DS_Store
